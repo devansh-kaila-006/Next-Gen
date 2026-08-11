@@ -1,0 +1,95 @@
+{
+  "name": "agentic-ide-assistant",
+  "displayName": "Agentic IDE Assistant",
+  "description": "Next-Gen Agentic IDE Assistant using Gemini and local embeddings",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Agentic Assistant",
+      "properties": {
+        "agenticAssistant.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for Google Gemini API"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "agentic-ide-assistant.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "agentic-ide-assistant.openSidebar",
+        "title": "Open Agentic Assistant Chat"
+      },
+      {
+        "command": "agentic-ide-assistant.indexWorkspace",
+        "title": "Index Workspace for Agent"
+      },
+      {
+        "command": "agentic-ide-assistant.reviewCurrentFile",
+        "title": "Agentic: Review Current File"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentic-assistant",
+          "title": "Agentic Assistant",
+          "icon": "$(hubot)"
+        }
+      ]
+    },
+    "views": {
+      "agentic-assistant": [
+        {
+          "type": "webview",
+          "id": "agentic-assistant-chat",
+          "name": "Chat"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^5.59.1",
+    "@typescript-eslint/parser": "^5.59.1",
+    "@vscode/test-electron": "^2.3.0",
+    "eslint": "^8.39.0",
+    "glob": "^8.1.0",
+    "mocha": "^10.2.0",
+    "ts-loader": "^9.4.2",
+    "typescript": "^5.0.4",
+    "webpack": "^5.81.0",
+    "webpack-cli": "^5.0.2"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@xenova/transformers": "^2.14.0",
+    "pdf-parse": "^1.1.1"
+  }
+}
