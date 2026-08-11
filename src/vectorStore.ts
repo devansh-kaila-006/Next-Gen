@@ -15,7 +15,7 @@ export class VectorStore {
   private genAI?: GoogleGenerativeAI;
 
   constructor(workspaceRoot: string) {
-    this.dbPath = path.join(workspaceRoot, '.agentic_db.json');
+    this.dbPath = path.join(workspaceRoot, '.agentic', 'index.json');
   }
 
   private getGenAI(): GoogleGenerativeAI {
@@ -69,6 +69,8 @@ export class VectorStore {
   }
 
   async save() {
+    const dir = path.dirname(this.dbPath);
+    await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(this.dbPath, JSON.stringify(this.documents, null, 2), 'utf8');
   }
 

@@ -60,6 +60,18 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');
     })
   );
+
+  // Silent auto-indexing every 15 minutes
+  const intervalId = setInterval(async () => {
+    try {
+      console.log('Running silent auto-index...');
+      await indexWorkspace({ report: () => {} });
+    } catch (e) {
+      console.error('Auto-index failed:', e);
+    }
+  }, 15 * 60 * 1000);
+  
+  context.subscriptions.push({ dispose: () => clearInterval(intervalId) });
 }
 
 export function deactivate() {}

@@ -76,8 +76,8 @@ export class AgenticAssistantProvider implements vscode.WebviewViewProvider {
               const genAI = new GoogleGenerativeAI(apiKey);
               const systemInstruction = `You are a senior 10x developer and Agentic IDE Assistant.
 Your goal is to provide elite-level, precise, and highly detailed answers.
-Always explain the 'why' before writing code.
-Format your response beautifully using markdown: use bolding, bullet points, headers, and code blocks.
+Do NOT provide code blocks or write code in your response unless the user explicitly asks for it (e.g. 'write a function', 'give me code', etc.). Instead, explain the concepts, point out the files, and provide architectural guidance.
+Format your response beautifully using markdown: use bolding, bullet points, headers, and code blocks (only if asked).
 Keep your answers professional and concise, but thorough.`;
 
               let model = genAI.getGenerativeModel({ 
@@ -393,8 +393,14 @@ ${fileContent}`;
   <!-- MAIN APP -->
   <div id="app-container">
     <div id="toolbar">
-      <button class="action-btn" id="index-btn">🔄 Index Workspace</button>
-      <button class="action-btn" id="review-btn">🔍 Review Active File</button>
+      <button class="action-btn" id="index-btn">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 4px;"><path d="M8 12c-2.21 0-4-1.79-4-4s1.79-4 4-4v1.5L10.5 3 8 0.5V2C4.69 2 2 4.69 2 8s2.69 6 6 6 6-2.69 6-6h-2c0 2.21-1.79 4-4 4z" fill="currentColor"/></svg>
+        Index Workspace
+      </button>
+      <button class="action-btn" id="review-btn">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 4px;"><path d="M15.7 14.3l-3.1-3.1C13.5 10 14 8.6 14 7c0-3.9-3.1-7-7-7S0 3.1 0 7s3.1 7 7 7c1.6 0 3-.5 4.2-1.4l3.1 3.1 1.4-1.4zM2 7c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5-5-2.2-5-5z" fill="currentColor"/></svg>
+        Review Active File
+      </button>
     </div>
 
     <div id="chat-container">

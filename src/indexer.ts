@@ -14,7 +14,7 @@ export async function indexWorkspace(progress: vscode.Progress<{ message?: strin
   progress.report({ message: 'Finding files...', increment: 10 });
 
   // Exclude common unnecessary directories
-  const excludePattern = '**/{node_modules,.git,dist,out,build,.vscode}/**';
+  const excludePattern = '**/{node_modules,.git,dist,out,build,.vscode,.agentic}/**';
   const includePattern = '**/*.{ts,js,py,go,java,c,cpp,h,hpp,md,json}';
 
   const files = await vscode.workspace.findFiles(includePattern, excludePattern);
