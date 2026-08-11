@@ -85,24 +85,35 @@ Keep your answers professional and concise, but thorough.`;
                 systemInstruction
               });
 
-              const currentTurn = `Codebase Context (Vector Search Results):\n${contextText}\n\nUser Question: ${userQuery}`;
+              let activeFileContext = "";
+              const editor = vscode.window.activeTextEditor;
+              if (editor) {
+                activeFileContext = `[Currently Active File: ${editor.document.fileName}]\n${editor.document.getText()}\n\n`;
+                this.sendMessageToWebview({ type: 'botMessage', value: `*(Reading active file: ${vscode.workspace.asRelativePath(editor.document.uri)})*` });
+              }
+
+              const currentTurn = `Codebase Context (Vector Search Results):\n${contextText}\n\n${activeFileContext}User Question: ${userQuery}`;
 
               const contents = [
                 ...this.chatHistory,
                 { role: 'user', parts: [{ text: currentTurn }] }
               ];
 
-              const result = await model.generateContent({ contents });
-              const responseText = result.response.text();
+              const result = await model.generateContentStream({ contents });
+              
+              const messageId = Math.random().toString(36).substring(7);
+              this.sendMessageToWebview({ type: 'streamStart', value: messageId });
+
+              let responseText = "";
+              for await (const chunk of result.stream) {
+                const chunkText = chunk.text();
+                responseText += chunkText;
+                this.sendMessageToWebview({ type: 'streamChunk', id: messageId, value: responseText });
+              }
 
               // Push the clean query to history to save context tokens, and the model's response
               this.chatHistory.push({ role: 'user', parts: [{ text: userQuery }] });
               this.chatHistory.push({ role: 'model', parts: [{ text: responseText }] });
-
-              this.sendMessageToWebview({
-                type: 'botMessage',
-                value: responseText
-              });
             } catch (err: any) {
                this.sendMessageToWebview({
                 type: 'error',
@@ -127,6 +138,30 @@ Keep your answers professional and concise, but thorough.`;
             } else {
               vscode.window.showErrorMessage('No active editor to apply code to.');
             }
+            break;
+          }
+        case 'generateCommit':
+          {
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders) return;
+            const rootPath = workspaceFolders[0].uri.fsPath;
+            
+            this.sendMessageToWebview({ type: 'botMessage', value: '*(Generating commit message...)*' });
+            
+            const cp = require('child_process');
+            cp.exec('git diff', { cwd: rootPath }, async (err: any, stdout: string) => {
+               if (err || !stdout) {
+                  this.sendMessageToWebview({ type: 'botMessage', value: 'No git changes found or not a git repository.' });
+                  return;
+               }
+               
+               const apiKey = vscode.workspace.getConfiguration('agenticAssistant').get<string>('geminiApiKey');
+               if (!apiKey) return;
+               const genAI = new GoogleGenerativeAI(apiKey);
+               const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash', systemInstruction: 'Write a professional conventional commit message based on this diff. Output ONLY the commit message. Use markdown.' });
+               const result = await model.generateContent(`Git Diff:\n${stdout}`);
+               this.sendMessageToWebview({ type: 'botMessage', value: result.response.text() });
+            });
             break;
           }
       }
@@ -180,6 +215,112 @@ ${fileContent}`;
         type: 'error',
         value: `Error during review: ${err.message}`
       });
+    }
+  }
+
+  public async triggerSymbolAction(symbolName: string, fileName: string, action: 'explain' | 'refactor') {
+    try {
+      this.sendMessageToWebview({ type: 'botMessage', value: `*(Agent is ${action}ing ${symbolName} in ${vscode.workspace.asRelativePath(fileName)}...)*` });
+
+      const config = vscode.workspace.getConfiguration('agenticAssistant');
+      const apiKey = config.get<string>('geminiApiKey');
+      if (!apiKey) {
+        this.sendMessageToWebview({ type: 'botMessage', value: 'Please set the Gemini API Key.' });
+        return;
+      }
+
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const systemInstruction = `You are a senior 10x developer and Agentic IDE Assistant.
+Your goal is to provide elite-level, precise, and highly detailed answers.
+The user wants you to ${action} the symbol '${symbolName}'. Provide the ${action} logic requested. Use markdown.`;
+      
+      let model = genAI.getGenerativeModel({ 
+        model: "gemini-3.5-flash",
+        systemInstruction
+      });
+
+      let activeFileContext = "";
+      const editor = vscode.window.activeTextEditor;
+      if (editor && editor.document.fileName === fileName) {
+        activeFileContext = `[File Content]:\n${editor.document.getText()}\n\n`;
+      }
+
+      const prompt = `Please ${action} the symbol named '${symbolName}' in this file.\n\n${activeFileContext}`;
+      
+      const contents = [
+        ...this.chatHistory,
+        { role: 'user', parts: [{ text: prompt }] }
+      ];
+
+      const result = await model.generateContentStream({ contents });
+      
+      const messageId = Math.random().toString(36).substring(7);
+      this.sendMessageToWebview({ type: 'streamStart', value: messageId });
+
+      let responseText = "";
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
+        responseText += chunkText;
+        this.sendMessageToWebview({ type: 'streamChunk', id: messageId, value: responseText });
+      }
+
+      this.chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
+      this.chatHistory.push({ role: 'model', parts: [{ text: responseText }] });
+    } catch (err: any) {
+       this.sendMessageToWebview({ type: 'error', value: `Error processing symbol: ${err.message}` });
+    }
+  }
+
+  public async triggerTerminalDebug(errorText: string) {
+    try {
+      this.sendMessageToWebview({ type: 'botMessage', value: `*(Debugging Terminal Error: ${errorText.substring(0, 50)}...)*` });
+
+      const config = vscode.workspace.getConfiguration('agenticAssistant');
+      const apiKey = config.get<string>('geminiApiKey');
+      if (!apiKey) {
+        this.sendMessageToWebview({ type: 'botMessage', value: 'Please set the Gemini API Key.' });
+        return;
+      }
+
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const systemInstruction = `You are a senior 10x developer and Agentic IDE Assistant.
+Your goal is to provide elite-level, precise, and highly detailed answers.
+The user just encountered an error in their terminal. Diagnose the issue and explain how to fix it.`;
+      
+      let model = genAI.getGenerativeModel({ 
+        model: "gemini-3.5-flash",
+        systemInstruction
+      });
+
+      let activeFileContext = "";
+      const editor = vscode.window.activeTextEditor;
+      if (editor) {
+        activeFileContext = `[Currently Active File: ${editor.document.fileName}]\n${editor.document.getText()}\n\n`;
+      }
+
+      const prompt = `I encountered the following error in my terminal:\n\n${errorText}\n\n${activeFileContext}Please help me debug this.`;
+      
+      const contents = [
+        ...this.chatHistory,
+        { role: 'user', parts: [{ text: prompt }] }
+      ];
+
+      const result = await model.generateContentStream({ contents });
+      
+      const messageId = Math.random().toString(36).substring(7);
+      this.sendMessageToWebview({ type: 'streamStart', value: messageId });
+
+      let responseText = "";
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
+        responseText += chunkText;
+        this.sendMessageToWebview({ type: 'streamChunk', id: messageId, value: responseText });
+      }
+
+      this.chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
+      this.chatHistory.push({ role: 'model', parts: [{ text: responseText }] });
+    } catch (err: any) {
+       this.sendMessageToWebview({ type: 'error', value: `Error debugging terminal: ${err.message}` });
     }
   }
 
@@ -401,6 +542,10 @@ ${fileContent}`;
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 4px;"><path d="M15.7 14.3l-3.1-3.1C13.5 10 14 8.6 14 7c0-3.9-3.1-7-7-7S0 3.1 0 7s3.1 7 7 7c1.6 0 3-.5 4.2-1.4l3.1 3.1 1.4-1.4zM2 7c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5-5-2.2-5-5z" fill="currentColor"/></svg>
         Review Active File
       </button>
+      <button class="action-btn" id="commit-btn">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 4px;"><path d="M10.5 4.5V2L14 5.5 10.5 9V6.5H5.5C4.1 6.5 3 7.6 3 9s1.1 2.5 2.5 2.5h2v2h-2C3 13.5 1 11.5 1 9s2-4.5 4.5-4.5h5z" fill="currentColor"/></svg>
+        Generate Commit
+      </button>
     </div>
 
     <div id="chat-container">
@@ -432,6 +577,7 @@ ${fileContent}`;
     const apiKeyInput = document.getElementById('api-key-input');
     const indexBtn = document.getElementById('index-btn');
     const reviewBtn = document.getElementById('review-btn');
+    const commitBtn = document.getElementById('commit-btn');
 
     // UI Listeners
     if(saveKeyBtn) {
@@ -452,6 +598,12 @@ ${fileContent}`;
     if(reviewBtn) {
       reviewBtn.addEventListener('click', () => {
         vscode.postMessage({ type: 'reviewActiveFile' });
+      });
+    }
+
+    if(commitBtn) {
+      commitBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'generateCommit' });
       });
     }
 
@@ -497,12 +649,13 @@ ${fileContent}`;
       }
     };
 
-    function addMessage(text, role) {
+    function addMessage(text, role, id) {
       // Remove loading indicator if it exists
       const loading = document.getElementById('loading');
       if (loading) loading.remove();
 
       const msgDiv = document.createElement('div');
+      if (id) msgDiv.id = id;
       
       if (role === 'user') {
         msgDiv.className = 'message user-msg';
@@ -552,6 +705,16 @@ ${fileContent}`;
       switch (message.type) {
         case 'botMessage':
           addMessage(message.value, 'bot');
+          break;
+        case 'streamStart':
+          addMessage('', 'bot', message.value);
+          break;
+        case 'streamChunk':
+          const bubble = document.getElementById(message.id);
+          if (bubble) {
+            bubble.innerHTML = renderMarkdown(message.value);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+          }
           break;
         case 'error':
           addMessage('Error: ' + message.value, 'error');

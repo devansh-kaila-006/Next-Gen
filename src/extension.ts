@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { AgenticAssistantProvider } from './AgenticAssistantProvider';
 import { indexWorkspace } from './indexer';
+import { AgenticCodeLensProvider } from './codeLensProvider';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('Agentic IDE Assistant is now active!');
@@ -58,6 +59,51 @@ export function activate(context: vscode.ExtensionContext) {
       // Simulate sending a user message to trigger the LLM review
       provider.triggerReview(fileName, fileContent);
       vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider('*', new AgenticCodeLensProvider())
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('agentic-ide-assistant.explainSymbol', (symbolName: string, fileName: string) => {
+      provider.triggerSymbolAction(symbolName, fileName, 'explain');
+      vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('agentic-ide-assistant.refactorSymbol', (symbolName: string, fileName: string) => {
+      provider.triggerSymbolAction(symbolName, fileName, 'refactor');
+      vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('agentic-ide-assistant.debugTerminal', (errorText: string) => {
+      provider.triggerTerminalDebug(errorText);
+      vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.window.registerTerminalLinkProvider({
+      provideTerminalLinks: (context, token) => {
+        const errorMatch = context.line.match(/(Error|Exception|Failed|Traceback|SyntaxError|TypeError|ReferenceError)/i);
+        if (errorMatch) {
+          return [{
+            startIndex: 0,
+            length: context.line.length,
+            tooltip: 'Debug with Agentic IDE',
+            data: context.line // store the line to send
+          } as any];
+        }
+        return [];
+      },
+      handleTerminalLink: (link: any) => {
+        vscode.commands.executeCommand('agentic-ide-assistant.debugTerminal', link.data);
+      }
     })
   );
 

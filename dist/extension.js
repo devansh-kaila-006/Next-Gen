@@ -43,7 +43,8 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(__webpack_require__(1));
 const AgenticAssistantProvider_1 = __webpack_require__(2);
-const indexer_1 = __webpack_require__(7);
+const indexer_1 = __webpack_require__(8);
+const codeLensProvider_1 = __webpack_require__(10);
 function activate(context) {
     console.log('Agentic IDE Assistant is now active!');
     const provider = new AgenticAssistantProvider_1.AgenticAssistantProvider(context.extensionUri);
@@ -86,6 +87,36 @@ function activate(context) {
         // Simulate sending a user message to trigger the LLM review
         provider.triggerReview(fileName, fileContent);
         vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');
+    }));
+    context.subscriptions.push(vscode.languages.registerCodeLensProvider('*', new codeLensProvider_1.AgenticCodeLensProvider()));
+    context.subscriptions.push(vscode.commands.registerCommand('agentic-ide-assistant.explainSymbol', (symbolName, fileName) => {
+        provider.triggerSymbolAction(symbolName, fileName, 'explain');
+        vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('agentic-ide-assistant.refactorSymbol', (symbolName, fileName) => {
+        provider.triggerSymbolAction(symbolName, fileName, 'refactor');
+        vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('agentic-ide-assistant.debugTerminal', (errorText) => {
+        provider.triggerTerminalDebug(errorText);
+        vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');
+    }));
+    context.subscriptions.push(vscode.window.registerTerminalLinkProvider({
+        provideTerminalLinks: (context, token) => {
+            const errorMatch = context.line.match(/(Error|Exception|Failed|Traceback|SyntaxError|TypeError|ReferenceError)/i);
+            if (errorMatch) {
+                return [{
+                        startIndex: 0,
+                        length: context.line.length,
+                        tooltip: 'Debug with Agentic IDE',
+                        data: context.line // store the line to send
+                    }];
+            }
+            return [];
+        },
+        handleTerminalLink: (link) => {
+            vscode.commands.executeCommand('agentic-ide-assistant.debugTerminal', link.data);
+        }
     }));
     // Silent auto-indexing every 15 minutes
     const intervalId = setInterval(async () => {
@@ -216,20 +247,29 @@ Keep your answers professional and concise, but thorough.`;
                                 model: "gemini-3.5-flash",
                                 systemInstruction
                             });
-                            const currentTurn = `Codebase Context (Vector Search Results):\n${contextText}\n\nUser Question: ${userQuery}`;
+                            let activeFileContext = "";
+                            const editor = vscode.window.activeTextEditor;
+                            if (editor) {
+                                activeFileContext = `[Currently Active File: ${editor.document.fileName}]\n${editor.document.getText()}\n\n`;
+                                this.sendMessageToWebview({ type: 'botMessage', value: `*(Reading active file: ${vscode.workspace.asRelativePath(editor.document.uri)})*` });
+                            }
+                            const currentTurn = `Codebase Context (Vector Search Results):\n${contextText}\n\n${activeFileContext}User Question: ${userQuery}`;
                             const contents = [
                                 ...this.chatHistory,
                                 { role: 'user', parts: [{ text: currentTurn }] }
                             ];
-                            const result = await model.generateContent({ contents });
-                            const responseText = result.response.text();
+                            const result = await model.generateContentStream({ contents });
+                            const messageId = Math.random().toString(36).substring(7);
+                            this.sendMessageToWebview({ type: 'streamStart', value: messageId });
+                            let responseText = "";
+                            for await (const chunk of result.stream) {
+                                const chunkText = chunk.text();
+                                responseText += chunkText;
+                                this.sendMessageToWebview({ type: 'streamChunk', id: messageId, value: responseText });
+                            }
                             // Push the clean query to history to save context tokens, and the model's response
                             this.chatHistory.push({ role: 'user', parts: [{ text: userQuery }] });
                             this.chatHistory.push({ role: 'model', parts: [{ text: responseText }] });
-                            this.sendMessageToWebview({
-                                type: 'botMessage',
-                                value: responseText
-                            });
                         }
                         catch (err) {
                             this.sendMessageToWebview({
@@ -253,6 +293,29 @@ Keep your answers professional and concise, but thorough.`;
                         else {
                             vscode.window.showErrorMessage('No active editor to apply code to.');
                         }
+                        break;
+                    }
+                case 'generateCommit':
+                    {
+                        const workspaceFolders = vscode.workspace.workspaceFolders;
+                        if (!workspaceFolders)
+                            return;
+                        const rootPath = workspaceFolders[0].uri.fsPath;
+                        this.sendMessageToWebview({ type: 'botMessage', value: '*(Generating commit message...)*' });
+                        const cp = __webpack_require__(7);
+                        cp.exec('git diff', { cwd: rootPath }, async (err, stdout) => {
+                            if (err || !stdout) {
+                                this.sendMessageToWebview({ type: 'botMessage', value: 'No git changes found or not a git repository.' });
+                                return;
+                            }
+                            const apiKey = vscode.workspace.getConfiguration('agenticAssistant').get('geminiApiKey');
+                            if (!apiKey)
+                                return;
+                            const genAI = new generative_ai_1.GoogleGenerativeAI(apiKey);
+                            const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash', systemInstruction: 'Write a professional conventional commit message based on this diff. Output ONLY the commit message. Use markdown.' });
+                            const result = await model.generateContent(`Git Diff:\n${stdout}`);
+                            this.sendMessageToWebview({ type: 'botMessage', value: result.response.text() });
+                        });
                         break;
                     }
             }
@@ -299,6 +362,92 @@ ${fileContent}`;
                 type: 'error',
                 value: `Error during review: ${err.message}`
             });
+        }
+    }
+    async triggerSymbolAction(symbolName, fileName, action) {
+        try {
+            this.sendMessageToWebview({ type: 'botMessage', value: `*(Agent is ${action}ing ${symbolName} in ${vscode.workspace.asRelativePath(fileName)}...)*` });
+            const config = vscode.workspace.getConfiguration('agenticAssistant');
+            const apiKey = config.get('geminiApiKey');
+            if (!apiKey) {
+                this.sendMessageToWebview({ type: 'botMessage', value: 'Please set the Gemini API Key.' });
+                return;
+            }
+            const genAI = new generative_ai_1.GoogleGenerativeAI(apiKey);
+            const systemInstruction = `You are a senior 10x developer and Agentic IDE Assistant.
+Your goal is to provide elite-level, precise, and highly detailed answers.
+The user wants you to ${action} the symbol '${symbolName}'. Provide the ${action} logic requested. Use markdown.`;
+            let model = genAI.getGenerativeModel({
+                model: "gemini-3.5-flash",
+                systemInstruction
+            });
+            let activeFileContext = "";
+            const editor = vscode.window.activeTextEditor;
+            if (editor && editor.document.fileName === fileName) {
+                activeFileContext = `[File Content]:\n${editor.document.getText()}\n\n`;
+            }
+            const prompt = `Please ${action} the symbol named '${symbolName}' in this file.\n\n${activeFileContext}`;
+            const contents = [
+                ...this.chatHistory,
+                { role: 'user', parts: [{ text: prompt }] }
+            ];
+            const result = await model.generateContentStream({ contents });
+            const messageId = Math.random().toString(36).substring(7);
+            this.sendMessageToWebview({ type: 'streamStart', value: messageId });
+            let responseText = "";
+            for await (const chunk of result.stream) {
+                const chunkText = chunk.text();
+                responseText += chunkText;
+                this.sendMessageToWebview({ type: 'streamChunk', id: messageId, value: responseText });
+            }
+            this.chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
+            this.chatHistory.push({ role: 'model', parts: [{ text: responseText }] });
+        }
+        catch (err) {
+            this.sendMessageToWebview({ type: 'error', value: `Error processing symbol: ${err.message}` });
+        }
+    }
+    async triggerTerminalDebug(errorText) {
+        try {
+            this.sendMessageToWebview({ type: 'botMessage', value: `*(Debugging Terminal Error: ${errorText.substring(0, 50)}...)*` });
+            const config = vscode.workspace.getConfiguration('agenticAssistant');
+            const apiKey = config.get('geminiApiKey');
+            if (!apiKey) {
+                this.sendMessageToWebview({ type: 'botMessage', value: 'Please set the Gemini API Key.' });
+                return;
+            }
+            const genAI = new generative_ai_1.GoogleGenerativeAI(apiKey);
+            const systemInstruction = `You are a senior 10x developer and Agentic IDE Assistant.
+Your goal is to provide elite-level, precise, and highly detailed answers.
+The user just encountered an error in their terminal. Diagnose the issue and explain how to fix it.`;
+            let model = genAI.getGenerativeModel({
+                model: "gemini-3.5-flash",
+                systemInstruction
+            });
+            let activeFileContext = "";
+            const editor = vscode.window.activeTextEditor;
+            if (editor) {
+                activeFileContext = `[Currently Active File: ${editor.document.fileName}]\n${editor.document.getText()}\n\n`;
+            }
+            const prompt = `I encountered the following error in my terminal:\n\n${errorText}\n\n${activeFileContext}Please help me debug this.`;
+            const contents = [
+                ...this.chatHistory,
+                { role: 'user', parts: [{ text: prompt }] }
+            ];
+            const result = await model.generateContentStream({ contents });
+            const messageId = Math.random().toString(36).substring(7);
+            this.sendMessageToWebview({ type: 'streamStart', value: messageId });
+            let responseText = "";
+            for await (const chunk of result.stream) {
+                const chunkText = chunk.text();
+                responseText += chunkText;
+                this.sendMessageToWebview({ type: 'streamChunk', id: messageId, value: responseText });
+            }
+            this.chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
+            this.chatHistory.push({ role: 'model', parts: [{ text: responseText }] });
+        }
+        catch (err) {
+            this.sendMessageToWebview({ type: 'error', value: `Error debugging terminal: ${err.message}` });
         }
     }
     sendMessageToWebview(message) {
@@ -518,6 +667,10 @@ ${fileContent}`;
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 4px;"><path d="M15.7 14.3l-3.1-3.1C13.5 10 14 8.6 14 7c0-3.9-3.1-7-7-7S0 3.1 0 7s3.1 7 7 7c1.6 0 3-.5 4.2-1.4l3.1 3.1 1.4-1.4zM2 7c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5-5-2.2-5-5z" fill="currentColor"/></svg>
         Review Active File
       </button>
+      <button class="action-btn" id="commit-btn">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 4px;"><path d="M10.5 4.5V2L14 5.5 10.5 9V6.5H5.5C4.1 6.5 3 7.6 3 9s1.1 2.5 2.5 2.5h2v2h-2C3 13.5 1 11.5 1 9s2-4.5 4.5-4.5h5z" fill="currentColor"/></svg>
+        Generate Commit
+      </button>
     </div>
 
     <div id="chat-container">
@@ -549,6 +702,7 @@ ${fileContent}`;
     const apiKeyInput = document.getElementById('api-key-input');
     const indexBtn = document.getElementById('index-btn');
     const reviewBtn = document.getElementById('review-btn');
+    const commitBtn = document.getElementById('commit-btn');
 
     // UI Listeners
     if(saveKeyBtn) {
@@ -569,6 +723,12 @@ ${fileContent}`;
     if(reviewBtn) {
       reviewBtn.addEventListener('click', () => {
         vscode.postMessage({ type: 'reviewActiveFile' });
+      });
+    }
+
+    if(commitBtn) {
+      commitBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'generateCommit' });
       });
     }
 
@@ -614,12 +774,13 @@ ${fileContent}`;
       }
     };
 
-    function addMessage(text, role) {
+    function addMessage(text, role, id) {
       // Remove loading indicator if it exists
       const loading = document.getElementById('loading');
       if (loading) loading.remove();
 
       const msgDiv = document.createElement('div');
+      if (id) msgDiv.id = id;
       
       if (role === 'user') {
         msgDiv.className = 'message user-msg';
@@ -669,6 +830,16 @@ ${fileContent}`;
       switch (message.type) {
         case 'botMessage':
           addMessage(message.value, 'bot');
+          break;
+        case 'streamStart':
+          addMessage('', 'bot', message.value);
+          break;
+        case 'streamChunk':
+          const bubble = document.getElementById(message.id);
+          if (bubble) {
+            bubble.innerHTML = renderMarkdown(message.value);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+          }
           break;
         case 'error':
           addMessage('Error: ' + message.value, 'error');
@@ -2383,6 +2554,12 @@ exports.POSSIBLE_ROLES = POSSIBLE_ROLES;
 
 /***/ }),
 /* 7 */
+/***/ ((module) => {
+
+module.exports = require("child_process");
+
+/***/ }),
+/* 8 */
 /***/ (function(__unused_webpack_module, exports, __webpack_require__) {
 
 
@@ -2423,7 +2600,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.indexWorkspace = indexWorkspace;
 const vscode = __importStar(__webpack_require__(1));
 const vectorStore_1 = __webpack_require__(3);
-const chunker_1 = __webpack_require__(8);
+const chunker_1 = __webpack_require__(9);
 async function indexWorkspace(progress) {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
@@ -2468,7 +2645,7 @@ async function indexWorkspace(progress) {
 
 
 /***/ }),
-/* 8 */
+/* 9 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -2483,6 +2660,76 @@ function chunkText(text, chunkSize, overlap) {
     }
     return chunks;
 }
+
+
+/***/ }),
+/* 10 */
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.AgenticCodeLensProvider = void 0;
+const vscode = __importStar(__webpack_require__(1));
+class AgenticCodeLensProvider {
+    provideCodeLenses(document, token) {
+        const codeLenses = [];
+        const regex = new RegExp("^(?:export\\s+)?(?:async\\s+)?(?:function|class|def)\\s+([a-zA-Z0-9_]+)", "gm");
+        const text = document.getText();
+        let matches;
+        while ((matches = regex.exec(text)) !== null) {
+            const line = document.positionAt(matches.index).line;
+            const range = new vscode.Range(line, 0, line, matches[0].length);
+            const symbolName = matches[1];
+            const explainCmd = {
+                title: "Agent: Explain",
+                command: "agentic-ide-assistant.explainSymbol",
+                arguments: [symbolName, document.fileName]
+            };
+            const refactorCmd = {
+                title: "Agent: Refactor",
+                command: "agentic-ide-assistant.refactorSymbol",
+                arguments: [symbolName, document.fileName]
+            };
+            codeLenses.push(new vscode.CodeLens(range, explainCmd));
+            codeLenses.push(new vscode.CodeLens(range, refactorCmd));
+        }
+        return codeLenses;
+    }
+}
+exports.AgenticCodeLensProvider = AgenticCodeLensProvider;
 
 
 /***/ })
