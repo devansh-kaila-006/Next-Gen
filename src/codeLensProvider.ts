@@ -24,9 +24,16 @@ export class AgenticCodeLensProvider implements vscode.CodeLensProvider {
         command: "agentic-ide-assistant.refactorSymbol",
         arguments: [symbolName, document.fileName]
       };
+      
+      const testsCmd: vscode.Command = {
+        title: "Agent: Write Tests",
+        command: "agentic-ide-assistant.writeTestsSymbol",
+        arguments: [symbolName, document.fileName]
+      };
 
       codeLenses.push(new vscode.CodeLens(range, explainCmd));
       codeLenses.push(new vscode.CodeLens(range, refactorCmd));
+      codeLenses.push(new vscode.CodeLens(range, testsCmd));
     }
 
     return codeLenses;

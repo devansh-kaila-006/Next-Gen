@@ -81,6 +81,19 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('agentic-ide-assistant.writeTestsSymbol', (symbolName: string, fileName: string) => {
+      provider.triggerTestGeneration(symbolName, fileName);
+      vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('agentic-ide-assistant.scaffold', () => {
+      provider.triggerScaffold();
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('agentic-ide-assistant.debugTerminal', (errorText: string) => {
       provider.triggerTerminalDebug(errorText);
       vscode.commands.executeCommand('workbench.view.extension.agentic-assistant');

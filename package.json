@@ -3,6 +3,12 @@
   "displayName": "Agentic IDE Assistant",
   "description": "Next-Gen Agentic IDE Assistant using Gemini and local embeddings",
   "version": "0.0.1",
+  "publisher": "devan",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devan/next-gen.git"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },

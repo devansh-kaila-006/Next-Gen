@@ -117,7 +117,7 @@ Keep your answers professional and concise, but thorough.`;
             } catch (err: any) {
                this.sendMessageToWebview({
                 type: 'error',
-                value: `Error processing query: ${err.message}`
+                value: this.formatErrorMessage(err)
               });
             }
             break;
@@ -138,6 +138,10 @@ Keep your answers professional and concise, but thorough.`;
             } else {
               vscode.window.showErrorMessage('No active editor to apply code to.');
             }
+          }
+        case 'scaffold':
+          {
+            vscode.commands.executeCommand('agentic-ide-assistant.scaffold');
             break;
           }
         case 'generateCommit':
@@ -205,7 +209,6 @@ ${fileContent}`;
       const result = await model.generateContent(prompt);
       const responseText = result.response.text();
 
-      // For code reviews, we can optionally inject it into history or keep it stateless. Let's keep it stateless so it doesn't pollute chat memory.
       this.sendMessageToWebview({
         type: 'botMessage',
         value: responseText
@@ -213,7 +216,7 @@ ${fileContent}`;
     } catch (err: any) {
        this.sendMessageToWebview({
         type: 'error',
-        value: `Error during review: ${err.message}`
+        value: this.formatErrorMessage(err)
       });
     }
   }
@@ -267,7 +270,86 @@ The user wants you to ${action} the symbol '${symbolName}'. Provide the ${action
       this.chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
       this.chatHistory.push({ role: 'model', parts: [{ text: responseText }] });
     } catch (err: any) {
-       this.sendMessageToWebview({ type: 'error', value: `Error processing symbol: ${err.message}` });
+       this.sendMessageToWebview({ type: 'error', value: this.formatErrorMessage(err) });
+    }
+  }
+
+  public async triggerTestGeneration(symbolName: string, fileName: string) {
+    try {
+      this.sendMessageToWebview({ type: 'botMessage', value: `*(Agent is writing tests for ${symbolName} in ${vscode.workspace.asRelativePath(fileName)}...)*` });
+      const config = vscode.workspace.getConfiguration('agenticAssistant');
+      const apiKey = config.get<string>('geminiApiKey');
+      if (!apiKey) return;
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-3.5-flash",
+        systemInstruction: "You are an AI that writes unit tests. ONLY output the raw code for the test file inside a markdown block. Do not include conversational text."
+      });
+      const editor = vscode.window.activeTextEditor;
+      const content = editor && editor.document.fileName === fileName ? editor.document.getText() : "";
+      
+      const prompt = `Write a complete suite of unit tests for the symbol '${symbolName}' based on this file content:\n\n${content}`;
+      const result = await model.generateContent(prompt);
+      let text = result.response.text();
+      const codeMatch = text.match(/```[a-z]*\n([\s\S]*?)\n```/i);
+      const testCode = codeMatch ? codeMatch[1] : text;
+
+      // Save to a new file
+      const path = require('path');
+      const ext = path.extname(fileName);
+      const base = path.basename(fileName, ext);
+      const dir = path.dirname(fileName);
+      const isPython = ext === '.py';
+      const testFileName = isPython ? `test_${base}${ext}` : `${base}.test${ext}`;
+      const testFilePath = path.join(dir, testFileName);
+      
+      const fs = require('fs/promises');
+      await fs.writeFile(testFilePath, testCode, 'utf8');
+      
+      const testUri = vscode.Uri.file(testFilePath);
+      await vscode.window.showTextDocument(testUri);
+      
+      this.sendMessageToWebview({ type: 'botMessage', value: `Successfully generated and saved tests to **${testFileName}**.` });
+    } catch (err: any) {
+      this.sendMessageToWebview({ type: 'error', value: this.formatErrorMessage(err) });
+    }
+  }
+
+  public async triggerScaffold() {
+    try {
+      const prompt = await vscode.window.showInputBox({ prompt: "What do you want to scaffold? (e.g., 'React Auth Component')" });
+      if (!prompt) return;
+      
+      this.sendMessageToWebview({ type: 'botMessage', value: `*(Scaffolding: ${prompt}...)*` });
+      const config = vscode.workspace.getConfiguration('agenticAssistant');
+      const apiKey = config.get<string>('geminiApiKey');
+      if (!apiKey) return;
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-3.5-flash",
+        systemInstruction: "You are a scaffolding tool. You must ONLY output a raw JSON array of objects. Format: [{\"path\": \"filename.ext\", \"content\": \"file content\"}]. Do NOT wrap in markdown code blocks."
+      });
+      
+      const result = await model.generateContent(prompt);
+      let jsonText = result.response.text().trim();
+      if (jsonText.startsWith('```json')) jsonText = jsonText.replace(/^```json\n|\n```$/g, '');
+      else if (jsonText.startsWith('```')) jsonText = jsonText.replace(/^```\n|\n```$/g, '');
+      
+      const files = JSON.parse(jsonText);
+      const rootPath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+      if (!rootPath) return;
+      
+      const fs = require('fs/promises');
+      const path = require('path');
+      
+      for (const file of files) {
+         const fullPath = path.join(rootPath, file.path);
+         await fs.mkdir(path.dirname(fullPath), { recursive: true });
+         await fs.writeFile(fullPath, file.content, 'utf8');
+      }
+      this.sendMessageToWebview({ type: 'botMessage', value: `[Success] Successfully scaffolded ${files.length} files.` });
+    } catch (err: any) {
+      this.sendMessageToWebview({ type: 'error', value: this.formatErrorMessage(err) });
     }
   }
 
@@ -320,8 +402,16 @@ The user just encountered an error in their terminal. Diagnose the issue and exp
       this.chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
       this.chatHistory.push({ role: 'model', parts: [{ text: responseText }] });
     } catch (err: any) {
-       this.sendMessageToWebview({ type: 'error', value: `Error debugging terminal: ${err.message}` });
+       this.sendMessageToWebview({ type: 'error', value: this.formatErrorMessage(err) });
     }
+  }
+
+  private formatErrorMessage(err: any): string {
+    const msg = err.message || String(err);
+    if (msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('Quota exceeded')) {
+      return `**Rate Limit Exceeded (429)**\n\nYou have made too many requests to the Gemini API and hit the Free Tier limits (15 requests/minute). Please wait a few seconds and try again, or upgrade your API plan at Google AI Studio.`;
+    }
+    return `Error: ${msg}`;
   }
 
   public sendMessageToWebview(message: any) {
@@ -499,9 +589,6 @@ The user just encountered an error in their terminal. Diagnose the issue and exp
       border-radius: 4px;
       outline: none;
     }
-    #chat-input:focus {
-      border-color: var(--accent);
-    }
     #send-btn, #save-key-btn {
       background: var(--btn-bg);
       color: var(--btn-fg);
@@ -546,6 +633,10 @@ The user just encountered an error in their terminal. Diagnose the issue and exp
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 4px;"><path d="M10.5 4.5V2L14 5.5 10.5 9V6.5H5.5C4.1 6.5 3 7.6 3 9s1.1 2.5 2.5 2.5h2v2h-2C3 13.5 1 11.5 1 9s2-4.5 4.5-4.5h5z" fill="currentColor"/></svg>
         Generate Commit
       </button>
+      <button class="action-btn" id="scaffold-btn">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 4px;"><path d="M13 3V1H3v2H1v10h2v2h10v-2h2V3h-2zm-2 10H5V3h6v10z" fill="currentColor"/></svg>
+        Scaffold
+      </button>
     </div>
 
     <div id="chat-container">
@@ -578,6 +669,7 @@ The user just encountered an error in their terminal. Diagnose the issue and exp
     const indexBtn = document.getElementById('index-btn');
     const reviewBtn = document.getElementById('review-btn');
     const commitBtn = document.getElementById('commit-btn');
+    const scaffoldBtn = document.getElementById('scaffold-btn');
 
     // UI Listeners
     if(saveKeyBtn) {
@@ -604,6 +696,12 @@ The user just encountered an error in their terminal. Diagnose the issue and exp
     if(commitBtn) {
       commitBtn.addEventListener('click', () => {
         vscode.postMessage({ type: 'generateCommit' });
+      });
+    }
+
+    if(scaffoldBtn) {
+      scaffoldBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'scaffold' });
       });
     }
 
