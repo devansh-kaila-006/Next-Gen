@@ -2,6 +2,7 @@
   "name": "agentic-ide-assistant",
   "displayName": "Agentic IDE Assistant",
   "description": "Next-Gen Agentic IDE Assistant using Gemini and local embeddings",
+  "license": "MIT",
   "version": "0.0.1",
   "publisher": "devan",
   "icon": "icon.png",
