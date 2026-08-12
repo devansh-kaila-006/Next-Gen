@@ -4,11 +4,11 @@
   "description": "Next-Gen Agentic IDE Assistant using Gemini and local embeddings",
   "license": "MIT",
   "version": "0.0.1",
-  "publisher": "devan",
+  "publisher": "devansh-kaila-006",
   "icon": "icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/devan/next-gen.git"
+    "url": "https://github.com/devansh-kaila-006/next-gen.git"
   },
   "engines": {
     "vscode": "^1.80.0"
