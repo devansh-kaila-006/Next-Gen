@@ -19,6 +19,10 @@ You never have to manually explain what file you are working on. The extension a
 The extension parses your codebase (supporting JS, TS, Python, Ruby, Java, C++, etc.) and injects floating UI buttons directly above your functions and classes:
 - `[Agent: Explain]`: Instantly sends the code block to the AI to break down the logic.
 - `[Agent: Refactor]`: Asks the AI to optimize and rewrite the function.
+- `[Agent: Write Tests]`: Automatically generates a full suite of unit tests for the function and saves it directly to a new test file next to your code.
+
+### 📂 Workspace Scaffolding Engine
+Click the **Scaffold** button in the chat interface or use the Command Palette to trigger the scaffolding engine. Provide a prompt (like "Build a React Auth component") and the AI will automatically generate the code and construct the raw files in your workspace instantly.
 
 ### 🐛 Terminal Error Debugging
 Deeply integrated with VS Code's Terminal. If your scripts crash and print `Error:`, `Exception:`, or `Traceback:` into the terminal, those lines turn into clickable links. Click the error, and the Agent will automatically read the stack trace and debug it for you!
@@ -27,7 +31,7 @@ Deeply integrated with VS Code's Terminal. If your scripts crash and print `Erro
 A dedicated "Generate Commit" button in the Chat UI automatically runs `git diff` on your workspace, reads all of your uncommitted changes, and generates a perfect, professional Conventional Commit message.
 
 ### 🎨 Professional Webview Interface
-- A sleek, modern chat interface that matches your VS Code theme.
+- A sleek, modern chat interface that matches your VS Code theme, using clean, custom SVG icons instead of messy emojis.
 - **Setup Screen**: Easily input and save your Gemini API Key directly from the UI.
 - **Rich Markdown Rendering**: Code blocks are perfectly formatted using `marked.js` with syntax highlighting.
 - **Multi-Turn Memory**: The agent remembers the history of your current conversation, allowing you to ask follow-up questions seamlessly.
@@ -57,6 +61,7 @@ A dedicated "Generate Commit" button in the Chat UI automatically runs `git diff
 - **Index Workspace**: Click the 🔄 button in the toolbar to manually trigger a workspace scan (or let the 15-minute background timer handle it).
 - **Review Active File**: Click the 🔍 button in the toolbar to run an in-depth architectural review of the file you are currently looking at.
 - **Generate Commit**: Click the 📝 button in the toolbar when you are ready to commit your work to Git.
+- **Scaffold Code**: Click the 📂 Scaffold button in the toolbar to generate new files across your workspace.
 
 ## ⚙️ Architecture Requirements
 - Node.js & npm
