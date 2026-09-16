@@ -81,7 +81,7 @@ Format your response beautifully using markdown: use bolding, bullet points, hea
 Keep your answers professional and concise, but thorough.`;
 
               let model = genAI.getGenerativeModel({ 
-                model: "gemini-3.1-flash",
+                model: "gemini-3.1-flash-lite-preview",
                 systemInstruction
               });
 
@@ -162,7 +162,7 @@ Keep your answers professional and concise, but thorough.`;
                const apiKey = vscode.workspace.getConfiguration('agenticAssistant').get<string>('geminiApiKey');
                if (!apiKey) return;
                const genAI = new GoogleGenerativeAI(apiKey);
-               const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash', systemInstruction: 'Write a professional conventional commit message based on this diff. Output ONLY the commit message. Use markdown.' });
+               const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview', systemInstruction: 'Write a professional conventional commit message based on this diff. Output ONLY the commit message. Use markdown.' });
                const result = await model.generateContent(`Git Diff:\n${stdout}`);
                this.sendMessageToWebview({ type: 'botMessage', value: result.response.text() });
             });
@@ -194,7 +194,7 @@ Keep your answers professional and concise, but thorough.`;
       const systemInstruction = `You are a senior 10x developer and expert code reviewer. Provide elite-level architectural feedback. Format perfectly in Markdown.`;
       
       let model = genAI.getGenerativeModel({ 
-        model: "gemini-3.1-flash",
+        model: "gemini-3.1-flash-lite-preview",
         systemInstruction
       });
 
@@ -238,7 +238,7 @@ Your goal is to provide elite-level, precise, and highly detailed answers.
 The user wants you to ${action} the symbol '${symbolName}'. Provide the ${action} logic requested. Use markdown.`;
       
       let model = genAI.getGenerativeModel({ 
-        model: "gemini-3.1-flash",
+        model: "gemini-3.1-flash-lite-preview",
         systemInstruction
       });
 
@@ -282,7 +282,7 @@ The user wants you to ${action} the symbol '${symbolName}'. Provide the ${action
       if (!apiKey) return;
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ 
-        model: "gemini-3.1-flash",
+        model: "gemini-3.1-flash-lite-preview",
         systemInstruction: "You are an AI that writes unit tests. ONLY output the raw code for the test file inside a markdown block. Do not include conversational text."
       });
       const editor = vscode.window.activeTextEditor;
@@ -326,7 +326,7 @@ The user wants you to ${action} the symbol '${symbolName}'. Provide the ${action
       if (!apiKey) return;
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ 
-        model: "gemini-3.1-flash",
+        model: "gemini-3.1-flash-lite-preview",
         systemInstruction: "You are a scaffolding tool. You must ONLY output a raw JSON array of objects. Format: [{\"path\": \"filename.ext\", \"content\": \"file content\"}]. Do NOT wrap in markdown code blocks."
       });
       
@@ -370,7 +370,7 @@ Your goal is to provide elite-level, precise, and highly detailed answers.
 The user just encountered an error in their terminal. Diagnose the issue and explain how to fix it.`;
       
       let model = genAI.getGenerativeModel({ 
-        model: "gemini-3.1-flash",
+        model: "gemini-3.1-flash-lite-preview",
         systemInstruction
       });
 

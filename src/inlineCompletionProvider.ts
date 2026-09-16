@@ -20,7 +20,7 @@ export class AgenticInlineCompletionProvider implements vscode.InlineCompletionI
     if (!apiKey) return undefined;
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash", systemInstruction: "You are an inline code autocomplete agent. Only output the code that should be inserted at the cursor. Do NOT include markdown code blocks (```) or any conversational text. Keep the suggestion brief (1 to 5 lines maximum)." });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview", systemInstruction: "You are an inline code autocomplete agent. Only output the code that should be inserted at the cursor. Do NOT include markdown code blocks (```) or any conversational text. Keep the suggestion brief (1 to 5 lines maximum)." });
 
     // Get a bit of text before the cursor
     const prefixRange = new vscode.Range(Math.max(0, position.line - 15), 0, position.line, position.character);

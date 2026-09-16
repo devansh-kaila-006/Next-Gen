@@ -3,7 +3,7 @@
   "displayName": "Agentic IDE Assistant",
   "description": "Next-Gen Agentic IDE Assistant using Gemini and local embeddings",
   "license": "MIT",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "publisher": "devansh-kaila-006",
   "icon": "icon.png",
   "repository": {
